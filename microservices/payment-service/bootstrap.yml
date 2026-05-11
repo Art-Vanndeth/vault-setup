@@ -1,0 +1,25 @@
+# payment-service — src/main/resources/bootstrap.yml
+spring:
+  application:
+    name: payment-service
+  cloud:
+    vault:
+      host: ${VAULT_HOST:localhost}
+      port: ${VAULT_PORT:8200}
+      scheme: http
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID}
+        secret-id: ${VAULT_SECRET_ID}
+        app-role-path: approle
+      kv:
+        enabled: true
+        backend: secret
+        default-context: payment-service
+        profile-separator: "/"
+      config:
+        lifecycle:
+          enabled: true
+          min-renewal: 10s
+          expiry-threshold: 1m
+      fail-fast: true

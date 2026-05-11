@@ -1,0 +1,6 @@
+# Vault generated — NEVER COMMIT
+vault/credentials/
+vault/data/
+vault/logs/
+*.env
+.env

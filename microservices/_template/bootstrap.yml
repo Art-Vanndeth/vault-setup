@@ -1,0 +1,33 @@
+# _template/bootstrap.yml
+# Copy to microservices/<your-service>/src/main/resources/bootstrap.yml
+# Replace MY_SERVICE_NAME with your actual service name
+spring:
+  application:
+    name: MY_SERVICE_NAME
+  cloud:
+    vault:
+      host: ${VAULT_HOST:localhost}
+      port: ${VAULT_PORT:8200}
+      scheme: http
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID}
+        secret-id: ${VAULT_SECRET_ID}
+        app-role-path: approle
+      kv:
+        enabled: true
+        backend: secret
+        default-context: MY_SERVICE_NAME
+        profile-separator: "/"
+      config:
+        lifecycle:
+          enabled: true
+          min-renewal: 10s
+          expiry-threshold: 1m
+      fail-fast: true
+
+spring:
+  datasource:
+    url: ${spring.datasource.url}
+    username: ${spring.datasource.username}
+    password: ${spring.datasource.password}

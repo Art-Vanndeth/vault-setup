@@ -1,0 +1,105 @@
+# ==============================================================================
+# Centralized HashiCorp Vault  —  hashicorp/vault:2.0
+# ==============================================================================
+# ROOT CAUSE FIXES:
+#
+#  FIX 1 — "permission denied on /vault/data/core"
+#    Vault server runs as uid=100 (user "vault") but named Docker volumes are
+#    owned by root. We add a one-shot "vault-permissions" container that runs
+#    as root BEFORE vault starts and chowns /vault/data to uid 100.
+#
+#  FIX 2 — credentials never written
+#    vault-init runs as user "0" (root) so it can write to the bind-mounted
+#    vault/credentials/ folder on Windows / Docker Desktop.
+#
+#  FIX 3 — vault CLI used for all operations (no fragile wget JSON parsing)
+# ==============================================================================
+
+services:
+
+  # ============================================================
+  # Fix permissions on vault-data volume BEFORE vault starts
+  # Runs once, exits immediately. vault depends on it.
+  # ============================================================
+  vault-permissions:
+    image: hashicorp/vault:2.0
+    container_name: vault-permissions
+    restart: "no"
+    user: "0"
+    volumes:
+      - vault-data:/vault/data
+      - vault-logs:/vault/logs
+    entrypoint: ["sh", "-c", "chown -R 100:1000 /vault/data /vault/logs && echo 'Permissions set.'"]
+
+  # ============================================================
+  # Vault Server
+  # ============================================================
+  vault:
+    image: hashicorp/vault:2.0
+    container_name: vault
+    hostname: vault
+    restart: unless-stopped
+    user: "100:1000"
+    depends_on:
+      vault-permissions:
+        condition: service_completed_successfully
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_ADDR:      "http://0.0.0.0:8200"
+      VAULT_API_ADDR:  "http://0.0.0.0:8200"
+      VAULT_LOG_LEVEL: "info"
+      SKIP_SETCAP:     "true"
+    volumes:
+      - ./vault/config:/vault/config      # NOT :ro — entrypoint chowns this dir
+      - vault-data:/vault/data
+      - vault-logs:/vault/logs
+    command: vault server -config=/vault/config/vault.hcl
+    healthcheck:
+      test:
+        - "CMD"
+        - "wget"
+        - "--spider"
+        - "-q"
+        - "http://127.0.0.1:8200/v1/sys/health?standbyok=true&uninitcode=200&sealedcode=200"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - vault-net
+
+  # ============================================================
+  # Vault Init — one-shot, exits after bootstrap
+  # Runs as root so it can write to bind-mounted credentials/
+  # ============================================================
+  vault-init:
+    image: hashicorp/vault:2.0
+    container_name: vault-init
+    restart: "no"
+    user: "0"
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR:        "http://vault:8200"
+      VAULT_SKIP_VERIFY: "true"
+    volumes:
+      - ./vault/init:/vault/init:ro
+      - ./vault/policies:/vault/policies:ro
+      - ./vault/credentials:/vault/credentials
+    entrypoint: ["sh", "/vault/init/init.sh"]
+    networks:
+      - vault-net
+
+# ==============================================================================
+networks:
+  vault-net:
+    name: vault-net
+    driver: bridge
+
+volumes:
+  vault-data:
+    name: vault-data
+  vault-logs:
+    name: vault-logs
